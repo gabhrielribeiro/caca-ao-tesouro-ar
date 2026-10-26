@@ -51,21 +51,22 @@
     a { color: #ffcf54; }
 
     
+
 @media (max-width: 900px) {
   body.ar-active video,
   body.ar-active canvas.a-canvas {
-    position: fixed !important;
-    width: 92vw !important;
-    height: 68vh !important;
-    max-width: 520px !important;
+    width: 90vw !important;
+    height: 60vh !important;
+    max-width: 420px !important;
+    max-height: 500px !important;
     left: 50% !important;
     top: 50% !important;
-    right: auto !important;
-    bottom: auto !important;
     transform: translate(-50%, -50%) !important;
-    object-fit: cover !important;
-    border-radius: 20px !important;
+    object-fit: contain !important;
+    border-radius: 16px !important;
   }
+
+
 }
 
   </style>
