@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Caça ao Tesouro AR</title>
+  <meta name="description" content="Um jogo simples de caça ao tesouro em realidade aumentada.">
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.7/aframe/build/aframe-ar.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #08111f; color: #fff; }
+    .hud {
+      position: fixed; z-index: 10; inset: env(safe-area-inset-top, 0) 0 auto 0;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 16px; pointer-events: none;
+    }
+    .pill { background: #101d31eF; border: 1px solid #ffffff24; border-radius: 999px; padding: 10px 14px; font-weight: 700; }
+    .brand { font-size: 14px; letter-spacing: .02em; }
+    .panel {
+      position: fixed; z-index: 11; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0));
+      max-width: 520px; margin: auto; padding: 18px; border-radius: 22px;
+      background: #101d31ed; border: 1px solid #ffffff24; box-shadow: 0 16px 50px #0008;
+      text-align: center;
+    }
+    h1 { font-size: 23px; margin: 0 0 6px; }
+    p { margin: 6px 0 14px; color: #d2dcec; line-height: 1.4; font-size: 14px; }
+    button {
+      border: 0; border-radius: 14px; min-height: 48px; padding: 12px 18px;
+      font-size: 16px; font-weight: 800; cursor: pointer; width: 100%;
+      color: #241300; background: linear-gradient(135deg, #ffdf70, #ffad22);
+    }
+    button.secondary { margin-top: 9px; color: #fff; background: #263752; border: 1px solid #ffffff20; }
+    #sceneWrap { position: fixed; inset: 0; display: none; }
+    #sceneWrap.active { display: block; }
+    #demo { position: fixed; inset: 0; display: none; place-items: center; overflow: hidden;
+      background: radial-gradient(ellipse at 50% 35%, #253d5d, #08111f 70%); }
+    #demo.active { display: grid; }
+    .demo-floor { position: absolute; width: 150vw; height: 80vh; bottom: -38vh; border-radius: 50%;
+      transform: perspective(500px) rotateX(55deg); background: repeating-linear-gradient(0deg, #ffffff08 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, #ffffff08 0 1px, transparent 1px 48px); }
+    .treasure { position: relative; z-index: 1; font-size: 120px; filter: drop-shadow(0 20px 18px #0008); animation: float 2s ease-in-out infinite; cursor: pointer; user-select: none; }
+    .coins { position: absolute; font-size: 35px; animation: spin 3s linear infinite; }
+    .c1 { top: 27%; left: 22%; } .c2 { top: 38%; right: 19%; animation-delay: -.7s; } .c3 { top: 55%; left: 27%; animation-delay: -1.5s; }
+    @keyframes float { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-15px) rotate(3deg); } }
+    @keyframes spin { 0%,100% { transform: rotateY(0) translateY(0); } 50% { transform: rotateY(180deg) translateY(-12px); } }
+    .toast { position: fixed; z-index: 15; top: 80px; left: 50%; transform: translateX(-50%); background: #153b2c; border: 1px solid #3bd28b66; padding: 12px 16px; border-radius: 14px; display: none; font-weight: 700; white-space: nowrap; }
+    .toast.show { display: block; }
+    .hidden { display: none !important; }
+    .small { font-size: 12px; color: #aab9cd; margin-top: 10px; }
+    a { color: #ffcf54; }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div class="pill brand">🧭 CAÇA AO TESOURO AR</div>
+    <div class="pill">🪙 <span id="score">0</span></div>
+  </div>
+
+  <main id="start" class="panel">
+    <h1>O tesouro está por perto!</h1>
+    <p>Encontre o baú, toque nele e colete as moedas. Para testar a realidade aumentada, use um celular compatível e permita o acesso à câmera.</p>
+    <button id="startAR">Iniciar modo AR</button>
+    <button id="startDemo" class="secondary">Testar demonstração</button>
+    <div class="small">A câmera exige HTTPS ou localhost. O modo AR com marcador pode pedir que você aponte para o cartão Hiro.</div>
+  </main>
+
+  <section id="sceneWrap" aria-label="Cena de realidade aumentada"></section>
+
+  <section id="demo" aria-label="Demonstração do jogo">
+    <div class="demo-floor"></div>
+    <div class="coins c1">🪙</div><div class="coins c2">🪙</div><div class="coins c3">✨</div>
+    <div id="demoChest" class="treasure" role="button" tabindex="0" aria-label="Coletar tesouro">🧰</div>
+  </section>
+
+  <div id="toast" class="toast">+10 moedas! Tesouro encontrado!</div>
+
+  <script>
+    const start = document.getElementById('start');
+    const sceneWrap = document.getElementById('sceneWrap');
+    const demo = document.getElementById('demo');
+    const scoreEl = document.getElementById('score');
+    const toast = document.getElementById('toast');
+    let score = 0;
+    let arStarted = false;
+
+    function collect() {
+      score += 10;
+      scoreEl.textContent = score;
+      toast.textContent = '+10 moedas! Tesouro encontrado!';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1600);
+    }
+
+    document.getElementById('demoChest').addEventListener('click', collect);
+    document.getElementById('demoChest').addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') collect();
+    });
+
+    function makeScene() {
+      // O marcador Hiro é um marcador de demonstração padrão do AR.js.
+      // Imprima/abra https://ar-js-org.github.io/AR.js/data/images/hiro.png em outra tela.
+      sceneWrap.innerHTML = `
+        <a-scene embedded
+          arjs="sourceType: webcam; debugUIEnabled: false;"
+          renderer="logarithmicDepthBuffer: true; antialias: true; alpha: true"
+          vr-mode-ui="enabled: false">
+          <a-marker preset="hiro">
+            <a-entity position="0 0.15 0" class="collectible" collect-treasure>
+              <a-box position="0 0.35 0" width="0.85" height="0.55" depth="0.6"
+                color="#8b4a20" material="roughness: 0.55"></a-box>
+              <a-box position="0 0.66 0" width="0.9" height="0.12" depth="0.65"
+                color="#f2b632" material="metalness: 0.55; roughness: 0.3"></a-box>
+              <a-box position="0 0.35 0.31" width="0.16" height="0.22" depth="0.04"
+                color="#ffda62" material="metalness: 0.6; roughness: 0.25"></a-box>
+              <a-cylinder position="-0.28 0.35 0.33" radius="0.055" height="0.08" rotation="90 0 0"
+                color="#ffdc68" material="metalness: 0.7"></a-cylinder>
+              <a-cylinder position="0.28 0.35 0.33" radius="0.055" height="0.08" rotation="90 0 0"
+                color="#ffdc68" material="metalness: 0.7"></a-cylinder>
+              <a-torus position="-0.38 0.85 0" radius="0.16" radius-tubular="0.045"
+                rotation="90 0 0" color="#ffd84f" animation="property: rotation; to: 90 360 0; loop: true; dur: 2500"></a-torus>
+              <a-cylinder position="-0.38 0.85 0" radius="0.11" height="0.035"
+                color="#ffce39" material="metalness: 0.7"></a-cylinder>
+              <a-torus position="0.38 0.92 0.05" radius="0.13" radius-tubular="0.04"
+                rotation="90 0 0" color="#ffd84f" animation="property: rotation; to: 90 360 0; loop: true; dur: 1800"></a-torus>
+              <a-cylinder position="0.38 0.92 0.05" radius="0.09" height="0.03"
+                color="#ffce39" material="metalness: 0.7"></a-cylinder>
+              <a-text value="TOQUE NO BAÚ!" align="center" color="#ffffff" width="3"
+                position="0 1.25 0" scale="0.8 0.8 0.8"></a-text>
+            </a-entity>
+          </a-marker>
+          <a-entity camera></a-entity>
+        </a-scene>`;
+      const collectible = sceneWrap.querySelector('.collectible');
+      collectible.addEventListener('click', () => {
+        collect();
+        collectible.setAttribute('visible', 'false');
+        setTimeout(() => collectible.setAttribute('visible', 'true'), 1200);
+      });
+      arStarted = true;
+    }
+
+    document.getElementById('startDemo').addEventListener('click', () => {
+      start.classList.add('hidden');
+      demo.classList.add('active');
+    });
+
+    document.getElementById('startAR').addEventListener('click', () => {
+      start.classList.add('hidden');
+      sceneWrap.classList.add('active');
+      makeScene();
+    });
+  </script>
+</body>
+</html>
